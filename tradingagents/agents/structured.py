@@ -38,6 +38,11 @@ NO_EXTERNAL_TOOLS = (
     "or search the web; if something is missing, say so explicitly."
 )
 
+_EMPTY_FALLBACK = (
+    "The model returned an empty response. "
+    "Proceeding with the information available from previous pipeline stages."
+)
+
 
 def bind_structured(llm: Any, schema: type[T], agent_name: str) -> Any | None:
     """Return ``llm.with_structured_output(schema)`` or ``None`` if unsupported.
@@ -88,8 +93,21 @@ def invoke_structured_or_freetext(
     render: Callable[[T], str],
     agent_name: str,
 ) -> str:
-    """Run the structured call and render to markdown; fall back to free-text on any failure."""
+    """Run the structured call and render to markdown; fall back to free-text on any failure.
+
+    Guards against an empty free-text response (which would propagate as an
+    empty string and confuse downstream report aggregation) by substituting
+    a placeholder when the model returns neither text nor tool calls.
+    """
     result = invoke_structured(structured_llm, prompt, agent_name)
     if result is not None:
         return render(result)
-    return plain_llm.invoke(prompt).content
+    response = plain_llm.invoke(prompt)
+    content = response.content if response is not None else ""
+    if not content or (isinstance(content, str) and not content.strip()):
+        logger.warning(
+            "%s: free-text fallback returned empty content; substituting placeholder.",
+            agent_name,
+        )
+        return _EMPTY_FALLBACK
+    return content
