@@ -1,40 +1,42 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "services": {
-    "api": {
-      "root": ".",
-      "runtime": "python",
-      "entrypoint": "cli/server.py"
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxDuration": 300
+      }
     },
-    "web": {
-      "root": "tradecouncil---institutional-multi-agent-quantitative-terminal",
-      "framework": "vite"
+    {
+      "src": "tradecouncil---institutional-multi-agent-quantitative-terminal/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "tradecouncil---institutional-multi-agent-quantitative-terminal/dist"
+      }
     }
-  },
-  "rewrites": [
+  ],
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "destination": {
-        "service": "api"
-      }
+      "src": "/api/(.*)",
+      "dest": "/api/index.py"
     },
     {
-      "source": "/docs",
-      "destination": {
-        "service": "api"
-      }
+      "src": "/docs",
+      "dest": "/api/index.py"
     },
     {
-      "source": "/openapi.json",
-      "destination": {
-        "service": "api"
-      }
+      "src": "/openapi.json",
+      "dest": "/api/index.py"
     },
     {
-      "source": "/(.*)",
-      "destination": {
-        "service": "web"
-      }
+      "src": "/(.*\\.(js|css|ico|png|svg|woff|woff2|ttf|map))",
+      "dest": "/tradecouncil---institutional-multi-agent-quantitative-terminal/dist/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/tradecouncil---institutional-multi-agent-quantitative-terminal/dist/index.html"
     }
   ]
 }
