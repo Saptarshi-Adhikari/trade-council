@@ -1,0 +1,189 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-base: #101317;
+  --color-background: #0a141c;
+  --color-surface: #0a141c;
+  --color-surface-sidebar: #15191E;
+  --color-surface-panel: #191E24;
+  --color-surface-container: #172129;
+  --color-surface-container-high: #212b34;
+  --color-surface-container-highest: #2c363f;
+  --color-surface-container-low: #131d25;
+  --color-surface-container-lowest: #060f17;
+  --color-surface-bright: #313a43;
+  --color-border-divider: #2B323B;
+  --color-primary: #8ce1cf;
+  --color-primary-container: #70c5b4;
+  --color-primary-fixed-dim: #81d6c4;
+  --color-on-primary: #003730;
+  --color-on-primary-container: #005146;
+  --color-text-primary: #E8EAEC;
+  --color-text-secondary: #98A2AD;
+  --color-outline: #88938f;
+  --color-outline-variant: #3e4946;
+  --color-indicator-bullish: #4EAA8C;
+  --color-indicator-bearish: #D77972;
+  --color-indicator-warning: #D6AC64;
+  --color-secondary: #c2c7cf;
+  --color-secondary-container: #42474e;
+  --color-on-secondary-container: #b1b5bd;
+
+  --font-headline: "Geist", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "DM Sans", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Sans", monospace;
+}
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    background-color: #101317;
+    color: #E8EAEC;
+    font-family: "DM Sans", sans-serif;
+    overscroll-behavior: none;
+  }
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Typography Utility Classes matching Reference Design */
+.font-headline-xl {
+  font-family: "Geist", sans-serif;
+  font-size: 32px;
+  line-height: 40px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+}
+.font-headline-xl-mobile {
+  font-family: "Geist", sans-serif;
+  font-size: 24px;
+  line-height: 32px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+.font-headline-lg {
+  font-family: "Geist", sans-serif;
+  font-size: 22px;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+.font-headline-md {
+  font-family: "Geist", sans-serif;
+  font-size: 16px;
+  line-height: 22px;
+  letter-spacing: -0.005em;
+  font-weight: 600;
+}
+.font-headline-sm {
+  font-family: "Geist", sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  font-weight: 600;
+}
+.font-body-lg {
+  font-family: "DM Sans", sans-serif;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+}
+.font-body-md {
+  font-family: "DM Sans", sans-serif;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+.font-body-sm {
+  font-family: "DM Sans", sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+.font-label-lg {
+  font-family: "JetBrains Mono", "Noto Sans", monospace;
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: -0.01em;
+  font-weight: 500;
+}
+.font-label-md {
+  font-family: "JetBrains Mono", "Noto Sans", monospace;
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0em;
+  font-weight: 500;
+}
+.font-label-sm {
+  font-family: "JetBrains Mono", "Noto Sans", monospace;
+  font-size: 10px;
+  line-height: 12px;
+  letter-spacing: 0.04em;
+  font-weight: 400;
+}
+
+/* Spacing classes */
+.p-space-xs { padding: 0.25rem; }
+.px-space-xs { padding-left: 0.25rem; padding-right: 0.25rem; }
+.py-space-xs { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+
+.p-space-sm { padding: 0.5rem; }
+.px-space-sm { padding-left: 0.5rem; padding-right: 0.5rem; }
+.py-space-sm { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+
+.p-space-md { padding: 0.75rem; }
+.px-space-md { padding-left: 0.75rem; padding-right: 0.75rem; }
+.py-space-md { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+
+.p-space-lg { padding: 1rem; }
+.px-space-lg { padding-left: 1rem; padding-right: 1rem; }
+.py-space-lg { padding-top: 1rem; padding-bottom: 1rem; }
+
+.p-space-xl { padding: 1.5rem; }
+.p-margin { padding: 1rem; }
+.p-gutter { padding: 0.5rem; }
+
+.gap-space-xs { gap: 0.25rem; }
+.gap-space-sm { gap: 0.5rem; }
+.gap-space-md { gap: 0.75rem; }
+.gap-space-lg { gap: 1rem; }
+.gap-gutter { gap: 0.5rem; }
+
+.space-y-space-xs > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.25rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.25rem * var(--tw-space-y-reverse));
+}
+.space-y-space-sm > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.5rem * var(--tw-space-y-reverse));
+}
+.space-y-space-md > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(0.75rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(0.75rem * var(--tw-space-y-reverse));
+}
+.space-y-space-lg > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-y-reverse: 0;
+  margin-top: calc(1rem * calc(1 - var(--tw-space-y-reverse)));
+  margin-bottom: calc(1rem * var(--tw-space-y-reverse));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

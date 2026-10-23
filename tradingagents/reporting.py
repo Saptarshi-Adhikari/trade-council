@@ -43,6 +43,8 @@ def _header(ticker: str, final_state: dict, settings: dict | None) -> str:
             lines.append("- Data vendors: " + ", ".join(f"{k} {v}" for k, v in vendors.items()))
     if final_state.get("memory_note"):
         lines.append(f"- Memory log: {final_state['memory_note']}")
+    if final_state.get("backboard_memory_status"):
+        lines.append(f"- Backboard Persistent Memory: {final_state['backboard_memory_status']}")
     return "\n".join(lines) + "\n\n"
 
 

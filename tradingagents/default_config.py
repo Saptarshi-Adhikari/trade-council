@@ -31,6 +31,12 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
+    # Backboard persistent memory settings
+    "BACKBOARD_ENABLED":                     "backboard_enabled",
+    "BACKBOARD_ASSISTANT_ID":                "backboard_assistant_id",
+    "BACKBOARD_BASE_URL":                    "backboard_base_url",
+    "BACKBOARD_MAX_MEMORIES":                "backboard_max_memories",
+    "BACKBOARD_EVAL_HORIZON_DAYS":           "backboard_eval_horizon_days",
 }
 
 
@@ -200,9 +206,14 @@ def build_default_config() -> dict:
             ".SS":  "000001.SS",   # Shanghai (SSE Composite)
             ".SZ":  "399001.SZ",   # Shenzhen (SZSE Component)
             ".SA":  "^BVSP",       # B3 Brazil (Ibovespa)
-            "":     "SPY",         # default for US-listed tickers (no suffix)
+            "".strip():     "SPY",         # default for US-listed tickers (no suffix)
         },
-
+        # Backboard.io Persistent Memory & Learning Loop
+        "backboard_enabled": False,
+        "backboard_assistant_id": None,
+        "backboard_base_url": "https://app.backboard.io/api",
+        "backboard_max_memories": 5,
+        "backboard_eval_horizon_days": 5,
     })
 
 

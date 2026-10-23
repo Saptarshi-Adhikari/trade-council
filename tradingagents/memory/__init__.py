@@ -5,6 +5,14 @@ holding window has traded, and ``reflection`` turns that outcome into a lesson
 the next run of the same ticker reads.
 """
 
+from tradingagents.memory.backboard_client import BackboardAPIError, BackboardClient
+from tradingagents.memory.backboard_memory import BackboardMemoryCoordinator, StructuredDecisionRecord
 from tradingagents.memory.log import TradingMemoryLog
 
-__all__ = ["TradingMemoryLog"]
+__all__ = [
+    "TradingMemoryLog",
+    "BackboardClient",
+    "BackboardAPIError",
+    "BackboardMemoryCoordinator",
+    "StructuredDecisionRecord",
+]

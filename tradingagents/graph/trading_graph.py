@@ -15,7 +15,7 @@ from tradingagents.dataflows.date_window import get_current_date, is_historical
 from tradingagents.dataflows.symbols import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_tier_client, tier_provider
-from tradingagents.memory import TradingMemoryLog, settlement
+from tradingagents.memory import BackboardMemoryCoordinator, StructuredDecisionRecord, TradingMemoryLog, settlement
 from tradingagents.memory.reflection import Reflector
 from tradingagents.reporting import write_report_tree
 
@@ -51,6 +51,17 @@ _NOT_IN_SIGNATURE = frozenset({
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
 
+    @property
+    def backboard_memory(self):
+        """Lazy coordinator instance ensuring safety even when __init__ is bypassed."""
+        if not hasattr(self, "_backboard_memory") or self._backboard_memory is None:
+            self._backboard_memory = BackboardMemoryCoordinator(getattr(self, "config", None))
+        return self._backboard_memory
+
+    @backboard_memory.setter
+    def backboard_memory(self, value):
+        self._backboard_memory = value
+
     def __init__(
         self,
         selected_analysts=("market", "social", "news", "fundamentals"),
@@ -80,6 +91,7 @@ class TradingAgentsGraph:
         self.quick_thinking_llm = create_tier_client(self.config, "quick", **extra).get_llm()
 
         self.memory_log = TradingMemoryLog(self.config)
+        self.backboard_memory = BackboardMemoryCoordinator(self.config)
 
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
@@ -332,7 +344,30 @@ class TradingAgentsGraph:
             logger.warning("Reading the memory log failed: %s", exc)
             past_context = ""
             note = note or f"The memory log could not be read this run ({type(exc).__name__})."
-        return {"past_context": past_context, "memory_note": note}
+
+        # Backboard Persistent Memory Retrieval
+        bb_note = ""
+        if self.backboard_memory.is_active:
+            try:
+                memories = self.backboard_memory.retrieve_relevant_cases(
+                    ticker=state["company_of_interest"],
+                    query_context=f"Trade date {state.get('trade_date')} analysis",
+                )
+                if memories:
+                    bb_formatted = self.backboard_memory.format_memory_for_prompt(memories)
+                    if past_context:
+                        past_context = f"{past_context}\n\n{bb_formatted}"
+                    else:
+                        past_context = bb_formatted
+                    bb_note = f"Backboard: retrieved {len(memories)} persistent historical cases."
+                else:
+                    bb_note = "Backboard: connected (no prior cases matched)."
+            except Exception as exc:
+                logger.warning("[Backboard] Failed to retrieve persistent memories: %s", exc)
+                bb_note = f"Backboard: memory retrieval failed ({type(exc).__name__})."
+
+        combined_note = " | ".join(filter(None, [note, bb_note]))
+        return {"past_context": past_context, "memory_note": combined_note}
 
     def settle_pending(self, company_name) -> settlement.Settlement:
         """Settle this ticker's decisions whose holding window has now traded.
@@ -343,7 +378,25 @@ class TradingAgentsGraph:
         settle it now. Returns what was settled and what failed.
         """
         with run_config(self.config):
-            return settlement.settle_pending(company_name, self.memory_log, self.reflector, self.config)
+            res = settlement.settle_pending(company_name, self.memory_log, self.reflector, self.config)
+            # When Backboard is active, also notify it of settled outcomes
+            if self.backboard_memory.is_active and res.settled:
+                for ticker, dt in res.settled:
+                    try:
+                        self.backboard_memory.record_evaluation_outcome(
+                            run_id=f"{ticker}_{dt}",
+                            ticker=ticker,
+                            trade_date=dt,
+                            raw_return=0.0,  # Recorded in Markdown memory
+                            alpha_return=0.0,
+                            benchmark=settlement.resolve_benchmark(ticker, self.config),
+                            holding_days=self.config.get("holding_period_days", 5),
+                            evaluation_notes=f"Settled {dt} decision against benchmark.",
+                            supported_status="evaluated",
+                        )
+                    except Exception as exc:
+                        logger.warning("[Backboard] Could not update outcome for %s on %s: %s", ticker, dt, exc)
+            return res
 
     def settle_all_pending(self, wait: bool = True) -> settlement.Settlement:
         """Settle every ticker's decisions whose holding window has now traded (#1445).
@@ -356,18 +409,55 @@ class TradingAgentsGraph:
             return settlement.settle_all_pending(self.memory_log, self.reflector, self.config, wait=wait)
 
     def record_decision(self, company_name, trade_date, final_state):
-        """Record a finished run: its state log, and its decision in the memory log
-        for reflection on the next same-ticker run. propagate() and the CLI both end here."""
+        """Record a finished run: its state log, decision in the memory log, and
+        indexed into Backboard persistent memory when active."""
         self._log_state(trade_date, final_state)
         decision = final_state.get("final_trade_decision")
         if not decision:
             logger.warning("No final decision for %s on %s; nothing added to the memory log",
                            company_name, trade_date)
             return
+
+        rating = run_rating(final_state)
         self.memory_log.store_decision(
             ticker=company_name, trade_date=trade_date, final_trade_decision=decision,
-            rating=run_rating(final_state),
+            rating=rating,
         )
+
+        if self.backboard_memory.is_active:
+            try:
+                # Extract debate perspectives safely
+                risk_state = final_state.get("risk_debate_state") or {}
+                inv_debate = final_state.get("investment_debate_state") or {}
+
+                record = StructuredDecisionRecord(
+                    run_id=f"{company_name}_{trade_date}_{int(datetime.utcnow().timestamp())}",
+                    ticker=company_name,
+                    trade_date=str(trade_date),
+                    rating=rating,
+                    llm_provider=self.config.get("llm_provider"),
+                    deep_model=self.config.get("deep_think_llm"),
+                    quick_model=self.config.get("quick_think_llm"),
+                    thesis_bull=inv_debate.get("bull_history"),
+                    thesis_bear=inv_debate.get("bear_history"),
+                    trader_plan=final_state.get("trader_investment_plan"),
+                    risk_aggressive=risk_state.get("aggressive_history"),
+                    risk_conservative=risk_state.get("conservative_history"),
+                    risk_neutral=risk_state.get("neutral_history"),
+                    final_verdict=decision,
+                    horizon_days=self.config.get("holding_period_days", 5),
+                )
+                success = self.backboard_memory.store_decision(record)
+                if success:
+                    final_state["backboard_memory_status"] = "Persisted successfully"
+                else:
+                    final_state["backboard_memory_status"] = "Persistence failed (fail-open)"
+            except Exception as exc:
+                logger.warning("[Backboard] Exception while indexing structured decision: %s", exc)
+                final_state["backboard_memory_status"] = f"Persistence error ({type(exc).__name__})"
+        else:
+            final_state["backboard_memory_status"] = "Disabled or not configured"
+
 
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock",
                    checkpoint_thread_id: str | None = None, portfolio=None):

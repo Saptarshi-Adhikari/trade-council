@@ -1,0 +1,6 @@
+{
+  "name": "TRADECOUNCIL - Institutional Multi-Agent Quantitative Terminal",
+  "description": "Multi-agent algorithmic trading council and empirical simulation terminal providing real-time technical, fundamental, sentiment, and risk synthesis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
