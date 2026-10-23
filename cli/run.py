@@ -385,6 +385,15 @@ def run_analysis(checkpoint: bool | None = None, portfolio=None, flags=None):
         )
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
 
+    if flags.get("gemini_opinion"):
+        from cli.gemini_opinion import get_gemini_second_opinion
+        opinion = get_gemini_second_opinion(
+            selections["ticker"], selections["analysis_date"], final_state
+        )
+        if opinion:
+            final_state["gemini_second_opinion"] = opinion
+            console.print(f"[cyan]### Secondary Opinion (Gemini 3.5 Flash Lite):[/cyan]\n{opinion}\n")
+
     _offer_reports(final_state, graph, selections["ticker"],
                    save=flags.get("save"), show=flags.get("show"), html=flags.get("html"))
 

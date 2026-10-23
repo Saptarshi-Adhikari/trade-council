@@ -422,3 +422,17 @@ Please reference our work if you find *TradingAgents* provides you with some hel
       url={https://arxiv.org/abs/2412.20138}, 
 }
 ```
+
+---
+
+## TRADECOUNCIL Project Status
+
+**TRADECOUNCIL** is an autonomous multi-agent financial deliberation system developed from the upstream *TradingAgents* project.
+
+While upstream TradingAgents defaults to commercial cloud LLMs, TRADECOUNCIL is optimized for **private, zero-token-cost local execution** using open-weight models with an optional cloud secondary opinion:
+
+- **Local Brain**: Configured by default to run locally on [Ollama](https://ollama.com/) using Google's **Gemma 4** (`gemma4:e2b`), with **Qwen 2.5 7B** (`qwen2.5:7b`) as an established baseline and recovery option.
+- **Optional Secondary Opinion**: Supports an isolated, quota-safe second opinion via Google's **Gemini 3.5 Flash Lite** (`--gemini-second-opinion`) that never alters or blocks the local decision.
+- **Detailed Documentation**:
+  - [UPSTREAM_COMPARISON.md](UPSTREAM_COMPARISON.md) — Lineage baseline, verified improvements, inherited components, and sponsor category readiness.
+  - [WORKFLOW.md](WORKFLOW.md) — Comprehensive architecture, model inventory, routing, data tools, configuration reference, and recovery playbook.

@@ -68,6 +68,10 @@ def analyze(
         None, "--html/--no-html",
         help="Save the report as one HTML page too, complete_report.html, without asking (default: yes)",
     ),
+    gemini_opinion: bool = typer.Option(
+        False, "--gemini-second-opinion",
+        help="Request an optional, quota-safe secondary opinion from Gemini (off by default)",
+    ),
 ):
     """Run an analysis. This is what a bare `tradingagents` does.
 
@@ -89,7 +93,15 @@ def analyze(
             raise typer.Exit(code=1) from None
 
     try:
-        flags = {"ticker": ticker, "date": date, "analysts": analysts, "save": save, "show": show, "html": html}
+        flags = {
+            "ticker": ticker,
+            "date": date,
+            "analysts": analysts,
+            "save": save,
+            "show": show,
+            "html": html,
+            "gemini_opinion": gemini_opinion,
+        }
         run_analysis(checkpoint=checkpoint, portfolio=portfolio_context, flags=flags)
     except _NO_CONSOLE_ERRORS:
         # A terminal with no console buffer cannot host the interactive prompts.

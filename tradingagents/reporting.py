@@ -108,6 +108,12 @@ def write_report_tree(final_state: dict, ticker: str, save_path, settings: dict 
         content = "\n\n".join(f"### {agent}\n{text}" for agent, _filename, text in written)
         sections.append(f"## {heading}\n\n{content}")
 
+    if final_state.get("gemini_second_opinion"):
+        (save_path / "5_portfolio" / "gemini_second_opinion.md").write_text(
+            final_state["gemini_second_opinion"], encoding="utf-8"
+        )
+        sections.append(f"## VI. Optional Second Opinion (Gemini 3.5 Flash Lite)\n\n{final_state['gemini_second_opinion']}")
+
     (save_path / "complete_report.md").write_text(
         _header(ticker, final_state, settings) + "\n\n".join(sections), encoding="utf-8"
     )
