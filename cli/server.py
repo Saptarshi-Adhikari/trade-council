@@ -15,11 +15,13 @@ from datetime import datetime
 import json
 import logging
 import os
+import urllib.request
 import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from tradingagents.default_config import DEFAULT_CONFIG, build_default_config
@@ -177,6 +179,120 @@ def _format_agent_stages(final_state: Dict[str, Any]) -> List[Dict[str, Any]]:
     return stages
 
 
+def _fetch_market_context(ticker: str, period: str = "3mo") -> Dict[str, Any]:
+    """Fetch verified live market data, OHLCV candles, and computed technical indicators."""
+    try:
+        import yfinance as yf
+        from stockstats import wrap
+
+        canonical = ticker.strip().upper()
+        t = yf.Ticker(canonical)
+        df = t.history(period=period)
+
+        if df is None or df.empty:
+            return {
+                "ticker": canonical,
+                "price": "N/A",
+                "dayChange": "+0.00%",
+                "isPositive": True,
+                "dayHigh": "N/A",
+                "dayLow": "N/A",
+                "volume": "N/A",
+                "avgVolume20D": "N/A",
+                "currency": "INR" if canonical.endswith(".NS") else "USD",
+                "exchange": "NSE" if canonical.endswith(".NS") else "US",
+                "candles": [],
+                "indicators": {"ema20": 0.0, "ema50": 0.0, "vwap": 0.0, "rsi": 50.0, "ohlcHigh": "N/A", "ohlcLow": "N/A"},
+                "status": "unavailable",
+            }
+
+        # Calculate indicators via stockstats
+        stock_df = wrap(df.copy())
+        latest_row = df.iloc[-1]
+        prev_row = df.iloc[-2] if len(df) > 1 else latest_row
+
+        last_price = float(latest_row["Close"])
+        prev_close = float(prev_row["Close"])
+        day_diff = last_price - prev_close
+        pct_change = (day_diff / prev_close * 100) if prev_close > 0 else 0.0
+        is_positive = day_diff >= 0
+
+        # Technical indicators
+        ema20 = float(stock_df["close_20_ema"].iloc[-1]) if "close_20_ema" in stock_df else last_price
+        ema50 = float(stock_df["close_50_ema"].iloc[-1]) if "close_50_ema" in stock_df else last_price
+        rsi = float(stock_df["rsi"].iloc[-1]) if "rsi" in stock_df else 50.0
+
+        # Approximate VWAP over recent period
+        vwap = float((df["Close"] * df["Volume"]).sum() / df["Volume"].sum()) if df["Volume"].sum() > 0 else last_price
+
+        # Build candle points for the last 20 sessions for accurate chart rendering
+        recent_df = df.tail(20)
+        candles = []
+        for dt_idx, row in recent_df.iterrows():
+            c_open = float(row["Open"])
+            c_close = float(row["Close"])
+            dt_str = dt_idx.strftime("%Y-%m-%d") if hasattr(dt_idx, "strftime") else str(dt_idx)[:10]
+            vol_val = float(row["Volume"]) / 1_000_000.0  # In millions
+            candles.append({
+                "time": dt_str,
+                "open": round(c_open, 2),
+                "high": round(float(row["High"]), 2),
+                "low": round(float(row["Low"]), 2),
+                "close": round(c_close, 2),
+                "volume": round(vol_val, 2),
+                "isBullish": c_close >= c_open,
+            })
+
+        avg_vol_20 = float(df["Volume"].tail(20).mean()) if len(df) >= 20 else float(df["Volume"].mean())
+        avg_vol_str = f"{avg_vol_20 / 1_000_000:.1f}M" if avg_vol_20 >= 1_000_000 else f"{avg_vol_20 / 1_000:.0f}K"
+        vol_str = f"{float(latest_row['Volume']) / 1_000_000:.2f}M"
+
+        curr_symbol = "₹" if canonical.endswith(".NS") else "$"
+
+        return {
+            "ticker": canonical,
+            "lastPrice": f"{curr_symbol}{last_price:,.2f}",
+            "rawPrice": last_price,
+            "dayChange": f"{'+' if is_positive else ''}{pct_change:.2f}%",
+            "isPositive": is_positive,
+            "dayHigh": f"{curr_symbol}{float(latest_row['High']):,.2f}",
+            "dayLow": f"{curr_symbol}{float(latest_row['Low']):,.2f}",
+            "volume": vol_str,
+            "avgVolume20D": avg_vol_str,
+            "currency": "INR" if canonical.endswith(".NS") else "USD",
+            "exchange": "NSE" if canonical.endswith(".NS") else "US",
+            "candles": candles,
+            "indicators": {
+                "ema20": round(ema20, 2),
+                "ema50": round(ema50, 2),
+                "vwap": round(vwap, 2),
+                "rsi": round(rsi, 1),
+                "ohlcHigh": f"{curr_symbol}{float(recent_df['High'].max()):,.2f}",
+                "ohlcLow": f"{curr_symbol}{float(recent_df['Low'].min()):,.2f}",
+            },
+            "status": "live",
+            "observationTime": datetime.utcnow().isoformat() + "Z",
+        }
+    except Exception as exc:
+        logger.warning("Error fetching market data for %s: %s", ticker, exc)
+        return {
+            "ticker": ticker.upper(),
+            "lastPrice": "N/A",
+            "dayChange": "+0.00%",
+            "isPositive": True,
+            "dayHigh": "N/A",
+            "dayLow": "N/A",
+            "volume": "N/A",
+            "avgVolume20D": "N/A",
+            "currency": "INR" if ticker.endswith(".NS") else "USD",
+            "exchange": "NSE" if ticker.endswith(".NS") else "US",
+            "candles": [],
+            "indicators": {"ema20": 0.0, "ema50": 0.0, "vwap": 0.0, "rsi": 50.0, "ohlcHigh": "N/A", "ohlcLow": "N/A"},
+            "status": "unavailable",
+            "error": str(exc),
+        }
+
+
 def _run_sync_analysis(job_id: str, ticker: str, trade_date: str, asset_type: str, selected_analysts: List[str]):
     """Background worker executing the real TradingAgentsGraph."""
     try:
@@ -202,27 +318,30 @@ def _run_sync_analysis(job_id: str, ticker: str, trade_date: str, asset_type: st
 
         stages = _format_agent_stages(final_state)
 
+        # Incorporate verified market context, actual quotes and historical candles
+        mkt = _fetch_market_context(ticker)
+
         result_payload = {
             "ticker": ticker,
             "name": ticker,
-            "exchange": "NSE" if ticker.endswith(".NS") else "US",
-            "dataTier": "LIVE ENGINE (MULTI-AGENT)",
+            "exchange": mkt.get("exchange", "NSE" if ticker.endswith(".NS") else "US"),
+            "dataTier": f"VERIFIED LIVE MARKET · {mkt.get('status', 'LIVE').upper()}",
             "cachedTime": datetime.utcnow().isoformat() + "Z",
-            "lastPrice": "Real-time",
-            "dayChange": "+0.00%",
-            "isDayPositive": True,
-            "dayHigh": "N/A",
-            "dayLow": "N/A",
-            "volume": "Live",
-            "avgVolume20D": "Live",
-            "indicators": {
+            "lastPrice": mkt.get("lastPrice", "N/A"),
+            "dayChange": mkt.get("dayChange", "+0.00%"),
+            "isDayPositive": mkt.get("isPositive", True),
+            "dayHigh": mkt.get("dayHigh", "N/A"),
+            "dayLow": mkt.get("dayLow", "N/A"),
+            "volume": mkt.get("volume", "Live"),
+            "avgVolume20D": mkt.get("avgVolume20D", "Live"),
+            "indicators": mkt.get("indicators", {
                 "ema20": 0.0,
                 "ema50": 0.0,
                 "vwap": 0.0,
                 "rsi": 50.0,
                 "ohlcHigh": "N/A",
                 "ohlcLow": "N/A",
-            },
+            }),
             "verdict": {
                 "stance": raw_signal.upper(),
                 "agreement": "Agreement: Multi-Agent Council",
@@ -232,7 +351,7 @@ def _run_sync_analysis(job_id: str, ticker: str, trade_date: str, asset_type: st
                 "strongestBear": (final_state.get("investment_debate_state") or {}).get("bear_history", "N/A")[:200],
                 "invalidationTrigger": "Breach of risk manager stop bounds",
                 "parameters": {
-                    "refEntry": "Market",
+                    "refEntry": mkt.get("lastPrice", "Market"),
                     "stopLoss": "Dynamic (see risk report)",
                     "objective": "Target Horizon",
                     "simHorizon": f"{config.get('holding_period_days', 5)} Sessions",
@@ -243,7 +362,7 @@ def _run_sync_analysis(job_id: str, ticker: str, trade_date: str, asset_type: st
             "executedAt": f"{trade_date} ({datetime.utcnow().strftime('%H:%M:%S UTC')})",
             "pipeline": f"Ollama {config.get('quick_think_llm')} + {config.get('deep_think_llm')}",
             "provenanceHash": f"SHA256: {uuid.uuid4().hex[:12]}",
-            "candles": [],
+            "candles": mkt.get("candles", []),
             "backboardMemoryStatus": final_state.get("backboard_memory_status", "Disabled or Not Configured"),
             "memoryNote": final_state.get("memory_note", ""),
         }
@@ -275,10 +394,42 @@ def health():
 @app.get("/api/v1/config")
 def get_public_config():
     cfg = build_default_config()
+    provider = cfg.get("llm_provider", "ollama")
+    quick_model = cfg.get("quick_think_llm", "gemma4:e2b")
+    deep_model = cfg.get("deep_think_llm", "gemma4:e2b")
+
+    # Probe live model provider reachability
+    provider_connected = False
+    active_models: List[str] = []
+    base_url = cfg.get("backend_url") or os.getenv("TRADINGAGENTS_BASE_URL", "http://localhost:11434/v1")
+    
+    if provider == "ollama":
+        try:
+            # Check Ollama tags endpoint
+            clean_host = base_url.replace("/v1", "")
+            req = urllib.request.Request(f"{clean_host}/api/tags", headers={"User-Agent": "TradeCouncil"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode())
+                    active_models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                    provider_connected = True
+        except Exception:
+            provider_connected = False
+    elif provider == "gemini":
+        provider_connected = bool(os.getenv("GEMINI_API_KEY"))
+        active_models = [quick_model, deep_model] if provider_connected else []
+
+    is_primary_model_active = any(quick_model in m for m in active_models) if active_models else False
+
     return {
-        "llm_provider": cfg.get("llm_provider"),
-        "quick_model": cfg.get("quick_think_llm"),
-        "deep_model": cfg.get("deep_think_llm"),
+        "llm_provider": provider,
+        "primary_model": quick_model,
+        "quick_model": quick_model,
+        "deep_model": deep_model,
+        "fallback_model": "qwen2.5:7b" if "qwen2.5:7b" in active_models else "None",
+        "provider_connected": provider_connected,
+        "model_available": is_primary_model_active,
+        "active_models": active_models,
         "backboard_enabled": cfg.get("backboard_enabled", False),
         "backboard_configured": bool(os.getenv("BACKBOARD_API_KEY")),
         "gemini_second_opinion_available": bool(os.getenv("GEMINI_API_KEY")),
@@ -376,3 +527,83 @@ def get_history():
     except Exception as exc:
         logger.warning("Could not read history: %s", exc)
         return {"records": []}
+
+
+@app.get("/api/v1/market/snapshot")
+def get_market_snapshot(ticker: str = Query(..., description="Ticker symbol")):
+    """Retrieve verified latest market observation, OHLCV, and technical indicators."""
+    return _fetch_market_context(ticker)
+
+
+@app.get("/api/v1/market/chart")
+def get_market_chart(ticker: str = Query(..., description="Ticker symbol"), timeframe: str = Query("1D", description="Timeframe")):
+    """Retrieve verified candle points for the chart."""
+    ctx = _fetch_market_context(ticker)
+    return {
+        "ticker": ticker.upper(),
+        "timeframe": timeframe,
+        "candles": ctx.get("candles", []),
+        "indicators": ctx.get("indicators", {}),
+        "status": ctx.get("status", "live"),
+    }
+
+
+@app.get("/api/v1/analyses/{analysis_id}/events")
+async def stream_analysis_events(analysis_id: str):
+    """Server-Sent Events (SSE) stream for real-time analysis progress."""
+    job = JOBS.get(analysis_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Analysis ID not found")
+
+    async def event_generator():
+        last_status = None
+        last_progress = None
+        heartbeat_count = 0
+
+        while True:
+            current_job = JOBS.get(analysis_id)
+            if not current_job:
+                break
+
+            status = current_job.get("status")
+            progress = current_job.get("progress")
+
+            # Emit stage / progress update when changed
+            if status != last_status or progress != last_progress:
+                last_status = status
+                last_progress = progress
+                payload = {
+                    "analysis_id": analysis_id,
+                    "ticker": current_job.get("ticker"),
+                    "status": status,
+                    "progress": progress,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                }
+                if status == "completed":
+                    payload["result"] = current_job.get("result")
+                    yield f"event: analysis.completed\ndata: {json.dumps(payload)}\n\n"
+                    break
+                elif status == "failed":
+                    payload["error"] = current_job.get("error")
+                    yield f"event: analysis.failed\ndata: {json.dumps(payload)}\n\n"
+                    break
+                else:
+                    yield f"event: analysis.status\ndata: {json.dumps(payload)}\n\n"
+
+            # Periodic heartbeat
+            heartbeat_count += 1
+            if heartbeat_count % 5 == 0:
+                yield f": heartbeat {datetime.utcnow().isoformat()}\n\n"
+
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+

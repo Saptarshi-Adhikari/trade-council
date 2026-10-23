@@ -44,39 +44,29 @@ export const NewAnalysisModal: React.FC<NewAnalysisModalProps> = ({
     setStatusLog('Dispatching to TRADECOUNCIL Multi-Agent Engine...');
 
     try {
-      const { triggerLiveAnalysis, pollAnalysisStatus } = await import('../utils/apiClient');
+      const { triggerLiveAnalysis, subscribeToAnalysisEvents } = await import('../utils/apiClient');
       const analysisId = await triggerLiveAnalysis(targetTicker, undefined, timeframe);
       setStatusLog(`Engine initialized (Job ${analysisId}). Processing agents...`);
 
-      // Poll until completion or timeout
-      let attempts = 0;
-      const pollTimer = setInterval(async () => {
-        attempts++;
-        try {
-          const statusRes = await pollAnalysisStatus(analysisId);
+      // Subscribe via SSE stream (auto-falls back to polling)
+      subscribeToAnalysisEvents(
+        analysisId,
+        (statusRes) => {
           if (statusRes.progress) {
             setStatusLog(statusRes.progress);
           }
-          if (statusRes.status === 'completed') {
-            clearInterval(pollTimer);
-            setIsRunning(false);
-            onStartAnalysis(targetTicker, timeframe, statusRes.result);
-            onClose();
-          } else if (statusRes.status === 'failed') {
-            clearInterval(pollTimer);
-            setIsRunning(false);
-            setStatusLog(`Analysis failed: ${statusRes.error || 'Unknown error'}`);
-            setTimeout(() => onClose(), 2000);
-          } else if (attempts > 60) {
-            clearInterval(pollTimer);
-            setIsRunning(false);
-            onStartAnalysis(targetTicker, timeframe);
-            onClose();
-          }
-        } catch {
-          // Keep polling
+        },
+        (result) => {
+          setIsRunning(false);
+          onStartAnalysis(targetTicker, timeframe, result);
+          onClose();
+        },
+        (errorMsg) => {
+          setIsRunning(false);
+          setStatusLog(`Analysis error: ${errorMsg}`);
+          setTimeout(() => onClose(), 2000);
         }
-      }, 1500);
+      );
 
     } catch (err) {
       console.warn('Backend unavailable, using simulated consensus preview:', err);

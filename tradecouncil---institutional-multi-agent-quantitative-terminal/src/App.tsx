@@ -95,7 +95,7 @@ export default function App() {
         exchange: data.exchange,
         verdict: data.verdict.stance.includes('BUY') ? 'BUY' : data.verdict.stance.includes('ACCUMULATE') ? 'ACCUMULATE' : data.verdict.stance.includes('HOLD') ? 'HOLD' : 'REDUCE',
         agreement: data.verdict.agreement.replace('Agreement: ', ''),
-        engine: 'Claude 3.5 Sonnet',
+        engine: 'Gemma 4 (Ollama)',
         dataTier: data.dataTier,
         rationale: data.verdict.synthesis,
         invalidationGate: data.verdict.invalidationTrigger,
@@ -120,6 +120,51 @@ export default function App() {
       setDecisionRecords(prev => [newRecord, ...prev]);
     }
   };
+
+  // Poll live market snapshot in-place for active ticker so charts and prices update without reload
+  useEffect(() => {
+    let isMounted = true;
+    const updateActiveTickerMarket = async () => {
+      try {
+        const { fetchMarketSnapshot } = await import('./utils/apiClient');
+        const snap = await fetchMarketSnapshot(selectedTicker);
+        if (snap && snap.lastPrice !== 'N/A' && isMounted) {
+          setLiveAnalysisMap(prev => {
+            const current = prev[selectedTicker] || getAnalysisDataForTicker(selectedTicker);
+            return {
+              ...prev,
+              [selectedTicker]: {
+                ...current,
+                lastPrice: snap.lastPrice,
+                dayChange: snap.dayChange,
+                isDayPositive: snap.isPositive,
+                dayHigh: snap.dayHigh !== 'N/A' ? snap.dayHigh : current.dayHigh,
+                dayLow: snap.dayLow !== 'N/A' ? snap.dayLow : current.dayLow,
+                volume: snap.volume !== 'N/A' ? snap.volume : current.volume,
+                avgVolume20D: snap.avgVolume20D !== 'N/A' ? snap.avgVolume20D : current.avgVolume20D,
+                indicators: {
+                  ...current.indicators,
+                  ...snap.indicators,
+                },
+                candles: snap.candles && snap.candles.length > 0 ? snap.candles : current.candles,
+                cachedTime: snap.observationTime ? new Date(snap.observationTime).toLocaleTimeString() : current.cachedTime,
+                dataTier: `VERIFIED LIVE MARKET · ${snap.status.toUpperCase()}`,
+              },
+            };
+          });
+        }
+      } catch {
+        // quiet fallback
+      }
+    };
+
+    updateActiveTickerMarket();
+    const timer = setInterval(updateActiveTickerMarket, 12000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, [selectedTicker]);
 
   const handleStartNewAnalysis = (ticker: string, _timeframe?: string, liveResult?: AssetAnalysisData) => {
     setSelectedTicker(ticker);

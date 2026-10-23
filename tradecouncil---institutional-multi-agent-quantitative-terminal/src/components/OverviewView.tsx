@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrackedEquity } from '../types/terminal';
 import { TRACKED_EQUITIES } from '../data/mockData';
+import { checkBackendHealth, fetchBackendConfig, fetchMarketSnapshot, BackendConfigResponse } from '../utils/apiClient';
 
 interface OverviewViewProps {
   onSelectTicker: (ticker: string) => void;
@@ -22,6 +23,70 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
   ]);
   const [isDispatching, setIsDispatching] = useState(false);
   const [dispatchSuccess, setDispatchSuccess] = useState(false);
+
+  // Real-time backend status and model orchestration
+  const [backendConfig, setBackendConfig] = useState<BackendConfigResponse | null>(null);
+  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(false);
+  const [activeJobsCount, setActiveJobsCount] = useState<number>(0);
+  const [lastHeartbeatTime, setLastHeartbeatTime] = useState<string>('Syncing...');
+  const [equities, setEquities] = useState<TrackedEquity[]>(TRACKED_EQUITIES);
+
+  // Real-time backend heartbeat & config sync
+  useEffect(() => {
+    let isMounted = true;
+
+    const syncTelemetry = async () => {
+      const health = await checkBackendHealth();
+      if (!isMounted) return;
+      setIsBackendHealthy(health.healthy);
+      setActiveJobsCount(health.activeJobs ?? 0);
+      setLastHeartbeatTime(new Date().toLocaleTimeString());
+
+      const cfg = await fetchBackendConfig();
+      if (!isMounted) return;
+      if (cfg) setBackendConfig(cfg);
+    };
+
+    syncTelemetry();
+    const interval = setInterval(syncTelemetry, 8000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Live market observation polling for top tracked tickers (non-intrusive, throttled)
+  useEffect(() => {
+    let isMounted = true;
+    const updatePrices = async () => {
+      // Pick first 2 equities per cycle to avoid flooding
+      const sample = ['RELIANCE.NS', 'HDFCBANK.NS'];
+      for (const t of sample) {
+        if (!isMounted) break;
+        const snap = await fetchMarketSnapshot(t);
+        if (snap && snap.lastPrice !== 'N/A' && isMounted) {
+          setEquities(prev => prev.map(eq => {
+            if (eq.ticker === snap.ticker) {
+              return {
+                ...eq,
+                lastClose: snap.lastPrice,
+                delta24h: snap.dayChange,
+                isPositive: snap.isPositive,
+              };
+            }
+            return eq;
+          }));
+        }
+      }
+    };
+
+    updatePrices();
+    const timer = setInterval(updatePrices, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const toggleAgent = (name: string) => {
     setSelectedAgents(prev =>
@@ -63,14 +128,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
           <div className="flex items-center gap-2 self-start lg:self-auto shrink-0 font-['JetBrains_Mono'] text-[10px]">
             <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-[#191E24] border border-[#2B323B] text-[#98A2AD]">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#4EAA8C]"></span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isBackendHealthy ? 'bg-[#4EAA8C]' : 'bg-[#D77972]'}`}></span>
               <span>
-                CYCLE: <span className="text-[#E8EAEC] tabular-nums font-mono">04m 12s</span>
+                ENGINE: <span className="text-[#E8EAEC] tabular-nums font-mono">{isBackendHealthy ? 'CONNECTED' : 'STANDALONE'}</span>
               </span>
             </div>
             <div className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-[#191E24] border border-[#2B323B] text-[#98A2AD]">
-              <span className="text-[#88938f]">HEARTBEAT:</span>
-              <span className="text-[#E8EAEC] uppercase font-medium">99.98% SYNC</span>
+              <span className="text-[#88938f]">SYNC:</span>
+              <span className="text-[#E8EAEC] font-medium">{lastHeartbeatTime}</span>
             </div>
           </div>
         </div>
@@ -79,18 +144,18 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 font-['JetBrains_Mono'] text-[11px]">
           <div className="bg-[#191E24] border border-[#2B323B] rounded p-3 flex flex-col justify-between">
             <div className="flex items-center justify-between text-[#88938f] uppercase tracking-wider text-[10px]">
-              <span>ACTIVE WORKSTATION SESSIONS</span>
+              <span>ACTIVE COUNCIL ANALYSES</span>
               <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[16px] font-['Geist'] text-[#E8EAEC] font-semibold tabular-nums">
-                3 Running
+                {activeJobsCount} Running
               </span>
-              <span className="text-[#98A2AD] text-[10px]">· 14 Cached</span>
+              <span className="text-[#98A2AD] text-[10px]">· Verified Engine</span>
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[#4EAA8C]">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#4EAA8C]"></span>
-              <span>Zero throttle threshold</span>
+              <span>Multi-Agent Async Queue</span>
             </div>
           </div>
 
@@ -117,30 +182,34 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
               <span className="material-symbols-outlined text-[14px]">hub</span>
             </div>
             <div className="mt-2">
-              <span className="text-[16px] font-['Geist'] text-[#E8EAEC] font-semibold truncate block">
-                Claude 3.5 Sonnet
+              <span className="text-[16px] font-['Geist'] text-[#70c5b4] font-semibold truncate block">
+                {backendConfig?.primary_model ? `Gemma 4 (${backendConfig.primary_model})` : 'Gemma 4 (gemma4:e2b)'}
               </span>
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[#98A2AD] truncate">
-              <span className="text-[#70c5b4]">+ DeepSeek-R1</span>
-              <span className="text-[#88938f]">(Hybrid Consensus)</span>
+              <span className={backendConfig?.provider_connected ? 'text-[#4EAA8C]' : 'text-[#D6AC64]'}>
+                ● {backendConfig?.provider_connected ? 'Ollama Online' : 'Provider Standby'}
+              </span>
+              <span className="text-[#88938f]">
+                {backendConfig?.gemini_second_opinion_available ? '+ Gemini 2nd Opinion' : '+ Qwen Fallback'}
+              </span>
             </div>
           </div>
 
           <div className="bg-[#191E24] border border-[#2B323B] rounded p-3 flex flex-col justify-between">
             <div className="flex items-center justify-between text-[#88938f] uppercase tracking-wider text-[10px]">
-              <span>SYSTEM LATENCY & DATA PIPELINE</span>
+              <span>DATA PIPELINE TELEMETRY</span>
               <span className="material-symbols-outlined text-[14px]">speed</span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-[16px] font-['Geist'] text-[#E8EAEC] font-semibold tabular-nums">
-                14ms
+                Verified Live
               </span>
-              <span className="text-[#98A2AD] text-[10px]">Lakehouse Feed</span>
+              <span className="text-[#98A2AD] text-[10px]">NSE & US Tape</span>
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-[10px] text-[#98A2AD] truncate">
-              <span className="text-[#88938f]">Store:</span>
-              <span>Parquet Lakehouse / NSE Historical</span>
+              <span className="text-[#88938f]">Source:</span>
+              <span>Yahoo Finance / yfinance Online</span>
             </div>
           </div>
         </div>
@@ -303,7 +372,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#2B323B] font-['JetBrains_Mono']">
-                  {TRACKED_EQUITIES.map(item => (
+                  {equities.map(item => (
                     <tr
                       key={item.ticker}
                       className="h-10 hover:bg-[#212b34]/40 transition-colors cursor-pointer"

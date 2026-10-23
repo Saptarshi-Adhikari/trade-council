@@ -254,59 +254,70 @@ export const AnalyzeView: React.FC<AnalyzeViewProps> = ({
                   opacity="0.7"
                 />
 
-                {/* Candlesticks Series (20 candlesticks, evenly spaced at x = 26 + i*36) */}
-                {data.candles.map((c, i) => {
-                  const x = 26 + i * 36;
-                  const isBull = c.isBullish;
-                  const color = isBull ? '#4EAA8C' : '#D77972';
-
-                  // normalize 2660-2780 to y=170 down to y=30
+                {/* Candlesticks Series (auto-scaling dynamically to actual price levels) */}
+                {(() => {
+                  if (!data.candles || data.candles.length === 0) return null;
+                  const allPrices = data.candles.flatMap(c => [c.high, c.low, c.open, c.close]).filter(p => !isNaN(p) && p > 0);
+                  const minPrice = allPrices.length > 0 ? Math.min(...allPrices) : 100;
+                  const maxPrice = allPrices.length > 0 ? Math.max(...allPrices) : 200;
+                  const priceRange = Math.max(1, maxPrice - minPrice);
+                  
+                  // normalize to y=165 down to y=35
                   const normY = (val: number) => {
-                    const ratio = (val - 2690) / 80;
+                    const ratio = (val - minPrice) / priceRange;
                     return 165 - ratio * 130;
                   };
 
-                  const yHigh = normY(c.high);
-                  const yLow = normY(c.low);
-                  const yOpen = normY(c.open);
-                  const yClose = normY(c.close);
-                  const yTop = Math.min(yOpen, yClose);
-                  const height = Math.max(3, Math.abs(yClose - yOpen));
+                  const maxVol = Math.max(...data.candles.map(c => c.volume || 1), 1);
 
-                  const volHeight = Math.min(48, c.volume * 6);
-                  const volY = 250 - volHeight;
+                  return data.candles.map((c, i) => {
+                    const step = Math.min(36, 700 / Math.max(1, data.candles.length));
+                    const x = 30 + i * step;
+                    const isBull = c.isBullish;
+                    const color = isBull ? '#4EAA8C' : '#D77972';
 
-                  return (
-                    <g
-                      key={i}
-                      onMouseEnter={() => setHoveredCandle(i)}
-                      onMouseLeave={() => setHoveredCandle(null)}
-                      className="cursor-crosshair"
-                    >
-                      {/* Wick */}
-                      <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth="1" />
-                      {/* Body */}
-                      <rect
-                        x={x - 4}
-                        y={yTop}
-                        width="8"
-                        height={height}
-                        fill={color}
-                        stroke={isBull ? '#70c5b4' : '#D77972'}
-                        strokeWidth={i === data.candles.length - 1 ? '1' : '0.5'}
-                      />
-                      {/* Volume bar */}
-                      <rect
-                        x={x - 4}
-                        y={volY}
-                        width="8"
-                        height={volHeight}
-                        fill={color}
-                        opacity={isBull ? 0.75 : 0.6}
-                      />
-                    </g>
-                  );
-                })}
+                    const yHigh = normY(c.high);
+                    const yLow = normY(c.low);
+                    const yOpen = normY(c.open);
+                    const yClose = normY(c.close);
+                    const yTop = Math.min(yOpen, yClose);
+                    const height = Math.max(3, Math.abs(yClose - yOpen));
+
+                    const volHeight = Math.min(48, Math.max(4, (c.volume / maxVol) * 44));
+                    const volY = 250 - volHeight;
+
+                    return (
+                      <g
+                        key={i}
+                        onMouseEnter={() => setHoveredCandle(i)}
+                        onMouseLeave={() => setHoveredCandle(null)}
+                        className="cursor-crosshair"
+                      >
+                        {/* Wick */}
+                        <line x1={x} y1={yHigh} x2={x} y2={yLow} stroke={color} strokeWidth="1" />
+                        {/* Body */}
+                        <rect
+                          x={x - 4}
+                          y={yTop}
+                          width="8"
+                          height={height}
+                          fill={color}
+                          stroke={isBull ? '#70c5b4' : '#D77972'}
+                          strokeWidth={i === data.candles.length - 1 ? '1' : '0.5'}
+                        />
+                        {/* Volume bar */}
+                        <rect
+                          x={x - 4}
+                          y={volY}
+                          width="8"
+                          height={volHeight}
+                          fill={color}
+                          opacity={isBull ? 0.75 : 0.6}
+                        />
+                      </g>
+                    );
+                  });
+                })()}
 
                 {/* Volume Average Line */}
                 <path

@@ -8,6 +8,7 @@ transport error must degrade to a placeholder rather than raise.
 from __future__ import annotations
 
 import http.client
+import io
 import json
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -36,7 +37,7 @@ class TestStockTwitsResilience:
         "exc",
         [
             http.client.IncompleteRead(b""),
-            HTTPError("url", 503, "down", {}, None),
+            HTTPError("url", 503, "down", {}, io.BytesIO(b"")),
             TimeoutError("slow"),
         ],
     )
