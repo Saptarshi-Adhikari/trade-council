@@ -1,0 +1,40 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "api": {
+      "root": ".",
+      "runtime": "python",
+      "entrypoint": "cli/server.py"
+    },
+    "web": {
+      "root": "tradecouncil---institutional-multi-agent-quantitative-terminal",
+      "framework": "vite"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/docs",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/openapi.json",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ]
+}

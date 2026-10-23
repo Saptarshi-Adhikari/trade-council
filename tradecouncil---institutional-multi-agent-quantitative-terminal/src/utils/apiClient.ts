@@ -1,6 +1,10 @@
 import { AssetAnalysisData, DecisionRecord } from '../types/terminal';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// When running under Vercel multi-service routing, /api is rewritten to the backend service.
+// In standalone local dev without Vercel rewrites, it falls back to VITE_API_BASE_URL or http://localhost:8000.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL !== undefined 
+  ? import.meta.env.VITE_API_BASE_URL 
+  : (typeof window !== 'undefined' && window.location.hostname !== 'localhost' ? '' : 'http://localhost:8000');
 
 export interface AnalysisStatusResponse {
   analysis_id: string;
